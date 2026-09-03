@@ -57,10 +57,10 @@ export function projectSelectionForState(state) {
   };
 }
 
-function projectCheck(state,kind) {
+function projectCheck(kind) {
   if (kind === 'sprint') return {
     base:52,
-    weights:{ skills:0.35, career:1.2 },
+    weights:{ skills:0.35, reputation:0.12 },
     successEffects:{ skills:2, reputation:2, stress:3 },
     failureEffects:{ stress:6, health:-2 },
     successResult:'Спринт сработал: команда закрыла важный кусок работы и проект заметно продвинулся.',
@@ -93,7 +93,7 @@ function projectCheck(state,kind) {
 }
 
 function actionChoice(state,kind,text,baseEffects,successProgress,failureProgress) {
-  const check=projectCheck(state,kind);
+  const check=projectCheck(kind);
   const chance=chanceForState(state,check);
   return {
     text:`${text} · 🎲 ${chance}%`,
