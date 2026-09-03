@@ -188,7 +188,7 @@ export async function finishGame(gameId,state,history,score) {
 export async function getLeaderboard(limit=10) {
   const { rows } = await pool.query(
     `WITH best AS (SELECT max_user_id,MAX(score)::int score FROM games WHERE status='finished' GROUP BY max_user_id)
-     SELECT b.max_user_id,b.score,COALESCE(NULLIF(u.full_name,''),u.first_name,u.username,'Игрок') name,u.institution
+     SELECT b.max_user_id,b.score,COALESCE(u.first_name,u.username,'Игрок') name,u.institution
      FROM best b JOIN users u ON u.max_user_id=b.max_user_id
      ORDER BY b.score DESC,b.max_user_id LIMIT $1`,[limit]);
   return rows;
