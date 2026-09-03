@@ -1,10 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { applyChoice, currentEvent, formatState, newGameState } from '../src/game/engine.js';
+import { annualIncomeForState, applyChoice, currentEvent, formatState, newGameState } from '../src/game/engine.js';
 import { scoreGame } from '../src/game/scoring.js';
 import { SCENARIO_BANK, SCENARIO_COUNT, STORY_EVENT_COUNT } from '../src/game/scenarioBank.js';
 import { CAREERS, CAREER_LINE_EVENT_COUNT, estimateAnnualIncome } from '../src/game/careers.js';
 import { CAREER_RANKS, careerMove, careerProgress, careerTitle } from '../src/game/careerTitles.js';
+import { SPECIALIZATIONS, SPECIALIZATION_COUNT, SPECIALIZATION_STORY_COUNT, allSpecializationRanks } from '../src/game/specializations.js';
 
 test('a turn advances exactly one year',()=>{
   const state=newGameState();
@@ -62,6 +63,7 @@ test('one complete life produces a valid four-choice event every year without re
   assert.equal(ids.length,44);
   assert.equal(new Set(ids).size,ids.length,'a single run should not repeat event ids');
   assert.ok(state.profession,'a full run must establish a profession');
+  assert.ok(state.specialization,'a full run must establish a specialization');
 });
 
 test('harmful habit has persistent yearly consequences',()=>{
@@ -125,11 +127,11 @@ test('profession changes yearly income',()=>{
 
 test('profession-specific event replaces generic scenario on career years',()=>{
   const state=newGameState();
-  Object.assign(state,{age:22,profession:'engineering',careerFamily:'industry'});
+  Object.assign(state,{age:29,profession:'engineering',careerFamily:'industry',specialization:'cad'});
   const event=currentEvent(state);
-  assert.equal(event.id,'career-engineering-22');
+  assert.equal(event.id,'career-engineering-29');
   assert.equal(event.choices.length,4);
-  assert.match(event.title,/чертеж|издел/i);
+  assert.match(event.title,/линия|проект|оборуд/i);
 });
 
 test('every profession has a complete seven-step job title ladder',()=>{
@@ -156,7 +158,7 @@ test('game development and pedagogy expose concrete titles instead of an abstrac
   state.career=10;
   assert.equal(careerTitle(state),'Продюсер / креативный директор');
 
-  Object.assign(state,{profession:'pedagogy',career:1});
+  Object.assign(state,{profession:'pedagogy',specialization:null,career:1});
   assert.equal(careerTitle(state),'Молодой педагог');
   state.career=4;
   assert.equal(careerTitle(state),'Ведущий педагог');
@@ -187,4 +189,85 @@ test('career movement detects a promotion and formatted player state shows the j
   assert.equal(move.to,'Middle IT-специалист');
   assert.match(formatState(after),/🏷 Должность: Middle IT-специалист/);
   assert.match(formatState(after),/Следующая ступень: Senior IT-специалист/);
+});
+
+test('all ten professions expose four specializations with seven-step ladders',()=>{
+  assert.equal(SPECIALIZATION_COUNT,40);
+  assert.equal(SPECIALIZATION_STORY_COUNT,120);
+  assert.deepEqual(Object.keys(SPECIALIZATIONS).sort(),Object.keys(CAREERS).sort());
+  for (const [profession,group] of Object.entries(SPECIALIZATIONS)) {
+    assert.equal(Object.keys(group).length,4,`${profession} must expose four specializations`);
+    for (const [key,item] of Object.entries(group)) {
+      assert.equal(item.ranks.length,7,`${profession}:${key} must have seven ranks`);
+      assert.equal(item.ranks[0].level,0);
+      assert.equal(item.ranks.at(-1).level,10);
+      assert.ok(item.incomeMultiplier>0);
+    }
+  }
+  assert.equal(Object.keys(allSpecializationRanks()).length,40);
+});
+
+test('game development specialization offers design, programming, art and production',()=>{
+  const labels=Object.values(SPECIALIZATIONS.game_dev).map((item)=>item.label);
+  assert.deepEqual(labels,['Геймдизайн','Программирование игр','Игровой арт и UI','Продюсирование игр']);
+
+  const state=newGameState();
+  Object.assign(state,{age:22,profession:'game_dev',careerFamily:'creative',career:2});
+  const event=currentEvent(state);
+  assert.equal(event.id,'specialization-game_dev-22');
+  assert.equal(event.choices.length,4);
+  applyChoice(state,event,1);
+  assert.equal(state.specialization,'game_programming');
+});
+
+test('specialization changes job title ladder and player card',()=>{
+  const state=newGameState();
+  Object.assign(state,{profession:'game_dev',specialization:'game_design',career:4});
+  assert.equal(careerTitle(state),'Middle Game Designer');
+  assert.match(formatState(state),/Специализация: 🧩 Геймдизайн/);
+  assert.match(formatState(state),/Должность: Middle Game Designer/);
+
+  state.specialization='game_programming';
+  assert.equal(careerTitle(state),'Middle Gameplay Programmer');
+  assert.match(formatState(state),/Должность: Middle Gameplay Programmer/);
+});
+
+test('specialization changes annual game income inside the same profession',()=>{
+  const state=newGameState();
+  Object.assign(state,{age:30,profession:'game_dev',career:5,skills:65,reputation:50,entrepreneurship:30});
+  state.specialization='game_art';
+  const artIncome=annualIncomeForState(state);
+  state.specialization='game_programming';
+  const programmingIncome=annualIncomeForState(state);
+  assert.ok(programmingIncome>artIncome,'specializations must use different income curves');
+});
+
+test('specialization creates its own recurring career story checkpoints',()=>{
+  const state=newGameState();
+  Object.assign(state,{age:27,profession:'pedagogy',specialization:'game_learning',careerFamily:'social',career:4});
+  let event=currentEvent(state);
+  assert.equal(event.id,'specialization-story-pedagogy-game_learning-27');
+  assert.equal(event.choices.length,4);
+  assert.match(event.text,/игровые механики|образователь/i);
+
+  state.age=38;
+  state.currentEventId=null;
+  event=currentEvent(state);
+  assert.equal(event.id,'specialization-story-pedagogy-game_learning-38');
+
+  state.age=49;
+  state.currentEventId=null;
+  event=currentEvent(state);
+  assert.equal(event.id,'specialization-story-pedagogy-game_learning-49');
+});
+
+test('choosing a specialization changes the concrete title immediately',()=>{
+  const before=newGameState();
+  Object.assign(before,{profession:'game_dev',career:4,specialization:null});
+  const after=structuredClone(before);
+  after.specialization='game_design';
+  const move=careerMove(before,after);
+  assert.equal(move.kind,'specialization');
+  assert.equal(move.from,'Middle-разработчик игр');
+  assert.equal(move.to,'Middle Game Designer');
 });
