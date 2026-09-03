@@ -7,6 +7,11 @@ export function chanceForState(state,check={}) {
     chance += (value - 50) * Number(weight || 0);
   }
 
+  if (check.npcSupportId) {
+    const npcScore=Number(state?.npcs?.[check.npcSupportId]?.score ?? 50);
+    chance += (npcScore - 50) * Number(check.npcWeight ?? 0.18);
+  }
+
   if ((state?.stress || 0) >= 75) chance -= 8;
   else if ((state?.stress || 0) >= 55) chance -= 4;
   if ((state?.health || 100) <= 35) chance -= 6;
