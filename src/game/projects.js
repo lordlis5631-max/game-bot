@@ -142,9 +142,9 @@ export function startProject(state,id) {
 export function applyProjectAction(state,choice,chanceOutcome) {
   if (choice.startProject) {
     const note=startProject(state,choice.startProject);
-    return note ? [note] : [];
+    return { notes:note?[note]:[], rewardEffects:{} };
   }
-  if (!choice.projectAction || !state.activeProject) return [];
+  if (!choice.projectAction || !state.activeProject) return { notes:[], rewardEffects:{} };
 
   const action=choice.projectAction;
   const success=Boolean(chanceOutcome?.success);
@@ -153,10 +153,12 @@ export function applyProjectAction(state,choice,chanceOutcome) {
   project.progress=clamp(Number(project.progress || 0)+progressDelta,0,100);
   project.lastActionAge=Number(state.age);
   const notes=[`${success?'✅':'⚠️'} Прогресс проекта: ${progressDelta>=0?'+':''}${progressDelta} → ${project.progress}/100.`];
+  let rewardEffects={};
 
   if (project.progress >= 100) {
     const config=PROJECTS[project.id];
-    applyEffects(state,config?.rewardEffects || {});
+    rewardEffects={ ...(config?.rewardEffects || {}) };
+    applyEffects(state,rewardEffects);
     state.completedProjects=Number(state.completedProjects || 0)+1;
     state.projectHistory=[...(state.projectHistory || []),{
       ...project,
@@ -167,7 +169,7 @@ export function applyProjectAction(state,choice,chanceOutcome) {
     notes.push(`🏁 Проект «${project.title}» завершён. Ты получил награду за доведённый до результата проект.`);
     state.activeProject=null;
   }
-  return notes;
+  return { notes, rewardEffects };
 }
 
 export function projectProgressText(state) {
