@@ -12,6 +12,8 @@ export function achievementsFor(state) {
   if ((state.flags || []).includes('mentor')) result.push('🧭 Наставник');
   if ((state.flags || []).includes('legacy')) result.push('🏛 Проект-наследие');
   if (state.debt === 0 && state.financialLiteracy >= 70) result.push('📈 Финансовый стратег');
+  if (Number(state.goalsCompleted || 0) >= 2) result.push('🎯 Целеустремлённый');
+  if (Number(state.completedProjects || 0) >= 2) result.push('🛠 Проектный лидер');
   return result;
 }
 
@@ -28,6 +30,8 @@ export function scoreGame(state) {
     state.financialLiteracy * 5 +
     state.socialCapital * 4 +
     state.entrepreneurship * 3 +
+    Number(state.goalsCompleted || 0) * 220 +
+    Number(state.completedProjects || 0) * 160 +
     achievementsFor(state).length * 180 -
     state.stress * 4 -
     state.addiction * 8 -
