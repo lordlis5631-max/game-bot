@@ -1,9 +1,15 @@
 const clamp = (value,min,max) => Math.max(min,Math.min(max,value));
 
+function statValueForChance(state,key) {
+  const raw=Number(state?.[key] ?? 50);
+  if (key==='career') return clamp(raw*10,0,100);
+  return raw;
+}
+
 export function chanceForState(state,check={}) {
   let chance = Number(check.base ?? 50);
   for (const [key,weight] of Object.entries(check.weights || {})) {
-    const value = Number(state?.[key] ?? 50);
+    const value = statValueForChance(state,key);
     chance += (value - 50) * Number(weight || 0);
   }
 
