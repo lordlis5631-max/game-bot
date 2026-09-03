@@ -36,7 +36,7 @@ test('completed long-term goal gives a persistent completion bonus',()=>{
   Object.assign(state,{age:24,money:100000,debt:0});
   startGoal(state,'finance');
   state.money=state.activeGoal.target.netWorth;
-  state.age=25;
+  state.age=26;
   const before=scoreGame(state);
   const resolution=evaluateGoal(state);
   assert.equal(resolution.status,'completed');
