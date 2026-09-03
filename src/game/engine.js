@@ -1,6 +1,7 @@
 import { eventForState } from './events.js';
 import { scoreGame } from './scoring.js';
 import { careerLabel, estimateAnnualIncome } from './careers.js';
+import { careerMove, careerProgress, careerTitle } from './careerTitles.js';
 
 const STAT_KEYS = ['health','happiness','skills','reputation','relationships','stress','financialLiteracy','socialCapital','entrepreneurship','addiction','risk'];
 const clamp = (v,min,max) => Math.max(min,Math.min(max,v));
@@ -135,16 +136,36 @@ export function applyChoice(state,event,choiceIndex) {
 
 function buildDeltas(before,after) {
   const keys = ['money','debt','health','happiness','skills','reputation','career','relationships'];
-  return keys.map((key)=>({key,delta:Number(after[key]||0)-Number(before[key]||0)})).filter((x)=>x.delta!==0);
+  const changes = keys
+    .map((key)=>({key,delta:Number(after[key]||0)-Number(before[key]||0)}))
+    .filter((x)=>x.delta!==0);
+  const move = careerMove(before,after);
+  if (move) changes.unshift({key:'careerTitle',delta:0,...move});
+  return changes;
 }
 
 export function formatDeltas(deltas) {
-  const labels = {money:'💰 Деньги',debt:'💳 Долг',health:'❤️ Здоровье',happiness:'😊 Счастье',skills:'🧠 Навыки',reputation:'👥 Репутация',career:'💼 Карьера',relationships:'🤝 Отношения'};
-  return deltas.slice(0,6).map(({key,delta})=>`${delta>0?'+':''}${Math.round(delta).toLocaleString('ru-RU')} — ${labels[key]}`).join('\n');
+  const labels = {money:'💰 Деньги',debt:'💳 Долг',health:'❤️ Здоровье',happiness:'😊 Счастье',skills:'🧠 Навыки',reputation:'👥 Репутация',career:'📈 Карьерный уровень',relationships:'🤝 Отношения'};
+  return deltas.slice(0,7).map((change)=>{
+    if (change.key === 'careerTitle') {
+      if (change.kind === 'start') return `🎯 Карьера началась: ${change.to}`;
+      if (change.kind === 'promotion') return `🎉 Повышение: ${change.from} → ${change.to}`;
+      return `🔁 Новая должность: ${change.from} → ${change.to}`;
+    }
+    const {key,delta}=change;
+    return `${delta>0?'+':''}${Math.round(delta).toLocaleString('ru-RU')} — ${labels[key]}`;
+  }).join('\n');
 }
 
 export function formatState(state,score=scoreGame(state)) {
   const profession = careerLabel(state);
   const annualIncome = state.profession ? `\n💵 Игровой доход: ${estimateAnnualIncome(state).toLocaleString('ru-RU')} ₽/год` : '';
-  return `👤 Возраст: ${state.age}\n💰 Деньги: ${state.money.toLocaleString('ru-RU')} ₽\n💳 Долг: ${state.debt.toLocaleString('ru-RU')} ₽\n❤️ Здоровье: ${state.health}/100\n😊 Счастье: ${state.happiness}/100\n🧠 Навыки: ${state.skills}/100\n👥 Репутация: ${state.reputation}/100\n💼 Профессия: ${profession}\n📈 Карьерный уровень: ${state.career}/10${annualIncome}\n🤝 Отношения: ${state.relationships}/100\n⭐ Текущие очки: ${score}`;
+  const title = state.profession ? `\n🏷 Должность: ${careerTitle(state)}` : '';
+  const progress = state.profession ? careerProgress(state) : null;
+  const next = progress?.maxed
+    ? '\n🏆 Карьерная вершина достигнута'
+    : progress?.nextTitle
+      ? `\n🎯 Следующая ступень: ${progress.nextTitle} (ещё ${progress.levelsToNext} ур.)`
+      : '';
+  return `👤 Возраст: ${state.age}\n💰 Деньги: ${state.money.toLocaleString('ru-RU')} ₽\n💳 Долг: ${state.debt.toLocaleString('ru-RU')} ₽\n❤️ Здоровье: ${state.health}/100\n😊 Счастье: ${state.happiness}/100\n🧠 Навыки: ${state.skills}/100\n👥 Репутация: ${state.reputation}/100\n💼 Профессия: ${profession}${title}\n📈 Карьерный уровень: ${state.career}/10${next}${annualIncome}\n🤝 Отношения: ${state.relationships}/100\n⭐ Текущие очки: ${score}`;
 }
