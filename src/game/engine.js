@@ -7,6 +7,7 @@ import { chanceForState, resolveChance } from './chanceChecks.js';
 import { evaluateGoal, goalProgressText, goalSelectionForState, startGoal } from './goals.js';
 import { applyProjectAction, projectEventForState, projectProgressText, projectSelectionForState } from './projects.js';
 import { applyNpcChoice, decorateNpcEvent, ensureNpcState, npcEventForState, npcSummaryText } from './npcs.js';
+import { choiceEffectReason, clarifyEventContent } from './explanations.js';
 
 const STAT_KEYS = ['health','happiness','skills','reputation','relationships','stress','financialLiteracy','socialCapital','entrepreneurship','addiction','risk'];
 const clamp = (v,min,max) => Math.max(min,Math.min(max,v));
@@ -95,8 +96,8 @@ export function annualIncomeForState(state) {
 }
 
 function yearlyEconomy(state) {
-  if (state.age<18) return {applied:false,reason:'До 18 лет годовая экономика ещё не рассчитывается.'};
-  if (!state.profession) return {applied:false,reason:'Профессия ещё не выбрана — автоматические годовые расходы пока не списываются.'};
+  if (state.age<18) return {applied:false,reason:'До 18 лет автоматические доходы и бытовые расходы ещё не рассчитываются. Учитываются только деньги, которые прямо указаны в выбранном решении.'};
+  if (!state.profession) return {applied:false,reason:'Профессия ещё не выбрана — автоматические годовые доходы и бытовые расходы пока не рассчитываются. Учитываются только прямые траты или доходы из решения.'};
 
   const income=annualIncomeForState(state);
   const fixedLivingCost=135000+Math.max(0,state.age-20)*7000;
@@ -117,17 +118,26 @@ function yearlyEconomy(state) {
   return {applied:true,income,fixedLivingCost,variableLivingCost,netBeforeDebt,debtPayment,debtInterest};
 }
 
-function persistentConsequences(state) {
+function persistentConsequences(state,before) {
   const notes=[];
-  if (state.addiction>0) {
-    const healthLoss=Math.ceil(state.addiction/28);
-    const moneyLoss=Math.round(state.addiction*180);
-    const stressGain=Math.ceil(state.addiction/40);
+  const previousAddiction=Number(before?.addiction||0);
+
+  if (previousAddiction>0 && previousAddiction<20) {
+    const decay=Math.min(2,Number(state.addiction||0));
+    if (decay>0) {
+      state.addiction-=decay;
+      notes.push(`⚠️ Риск привычки: -${decay} — после разового эпизода привычка пока не закрепилась, поэтому риск постепенно снижается.`);
+    }
+  } else if (previousAddiction>=20) {
+    const healthLoss=Math.ceil(previousAddiction/28);
+    const moneyLoss=Math.round(previousAddiction*180);
+    const stressGain=Math.ceil(previousAddiction/40);
     state.health-=healthLoss;
     state.money-=moneyLoss;
     state.stress+=stressGain;
-    notes.push(`⚠️ Накопленная зависимость: -${healthLoss} здоровье, -${moneyLoss.toLocaleString('ru-RU')} ₽ и +${stressGain} стресс. Это долгосрочный эффект прежних решений.`);
+    notes.push(`⚠️ Закрепившаяся привычка: -${healthLoss} здоровье, -${moneyLoss.toLocaleString('ru-RU')} ₽ на регулярные расходники и +${stressGain} стресс. Это последствие привычки, которая сформировалась раньше, а не текущего выбора.`);
   }
+
   if (state.stress>=75) {
     state.health-=3;
     state.happiness-=4;
@@ -146,19 +156,6 @@ function persistentConsequences(state) {
     notes.push('🛟 Финансовая подушка: -1 стресс — запас снижает тревогу из-за долга.');
   }
   return notes;
-}
-
-function clarifyEvent(event) {
-  if (event.id!=='vape-offer') return event;
-  return {
-    ...event,
-    title:'Предлагают попробовать вейп',
-    text:'На встрече знакомые предлагают попробовать вейп и говорят: «Один раз ничего не будет». Ты можешь отказаться, мягко уйти от разговора, выйти из ситуации или согласиться. Здесь проверяются личные границы, стресс и риск формирования вредной привычки.',
-    choices:event.choices.map((choice,index)=>({
-      ...choice,
-      text:['🙅 Спокойно отказаться','🗣 Перевести разговор на другую тему','🚶 Уйти из ситуации','💨 Попробовать вейп'][index]||choice.text,
-    })),
-  };
 }
 
 function decorateChanceChoices(event,state) {
@@ -186,23 +183,15 @@ function dynamicEventForState(state) {
   return null;
 }
 
-function choiceReason(eventId,choiceIndex,key,choice) {
-  if (eventId==='vape-offer') {
-    const reasons=[
-      {health:'Игровой бонус за безопасный выбор: ты не добавил организму новый вредный фактор.',reputation:'Ты спокойно обозначил личные границы и не поддался давлению компании.'},
-      {socialCapital:'Ты избежал конфликта и сохранил контакт с компанией.',happiness:'Ситуация закончилась без ссоры и лишнего напряжения.'},
-      {health:'Ты прекратил контакт с потенциально вредной ситуацией.',stress:'Ты вышел из давления компании, поэтому напряжение снизилось.'},
-      {happiness:'Кратковременный эмоциональный бонус от участия в общей активности.',health:'Вейп несёт риск для здоровья, поэтому показатель снижается.',money:'Это прямые расходы на вейп или расходники, а не штраф за событие.',addiction:'Появляется риск того, что разовая проба закрепится как привычка.'},
-    ];
-    if (reasons[choiceIndex]?.[key]) return reasons[choiceIndex][key];
-  }
-  return choice.result||'Это прямое последствие выбранного действия.';
-}
-
 function directChoiceDetails(event,choice,choiceIndex) {
   return Object.entries(choice.effects||{})
     .filter(([,value])=>Number(value)!==0)
-    .map(([key,value])=>({key,value:Number(value),label:DETAIL_LABELS[key]||key,reason:choiceReason(event.id,choiceIndex,key,choice)}));
+    .map(([key,value])=>({
+      key,
+      value:Number(value),
+      label:DETAIL_LABELS[key]||key,
+      reason:choiceEffectReason(event,choiceIndex,key,Number(value),choice),
+    }));
 }
 
 function effectLines(effects={},reason='Результат игрового события.') {
@@ -216,7 +205,7 @@ export function currentEvent(state) {
   if (!Array.isArray(state.seenEvents)) state.seenEvents=[];
   ensureNpcState(state);
   const base=dynamicEventForState(state)||eventForState(state);
-  const event=decorateChanceChoices(decorateNpcEvent(clarifyEvent(base),state),state);
+  const event=decorateChanceChoices(decorateNpcEvent(clarifyEventContent(base),state),state);
   state.currentEventId=event.id;
   return event;
 }
@@ -246,7 +235,7 @@ export function applyChoice(state,event,choiceIndex) {
   state.seenEvents.push(event.id);
 
   const economy=yearlyEconomy(state);
-  const persistent=persistentConsequences(state);
+  const persistent=persistentConsequences(state,before);
   state.age+=1;
   state.currentEventId=null;
   const goalResolution=evaluateGoal(state);
@@ -304,7 +293,7 @@ export function formatDeltas(deltas) {
     if (details.goalStarted) sections.push(details.goalStarted);
 
     if (details.direct.length) {
-      sections.push(`🎯 Последствия твоего решения:\n${details.direct.map((item)=>`${item.label}: ${formatSigned(item.value)} — ${item.reason}`).join('\n')}`);
+      sections.push(`🎯 Почему изменились показатели:\n${details.direct.map((item)=>`${item.label}: ${formatSigned(item.value)} — ${item.reason}`).join('\n')}`);
     }
 
     if (details.npc?.length) sections.push(`👥 Отношения с людьми:\n${details.npc.join('\n')}`);
@@ -335,14 +324,14 @@ export function formatDeltas(deltas) {
       sections.push(`📆 Экономика года: ${details.economy.reason}`);
     }
 
-    if (details.persistent?.length) sections.push(`⏳ Долгосрочные последствия:\n${details.persistent.join('\n')}`);
+    if (details.persistent?.length) sections.push(`⏳ Последствия прошлых решений:\n${details.persistent.join('\n')}`);
 
     if (details.goalResolution) {
       const reward=effectLines(details.goalResolution.rewardEffects,'Награда за выполненную долгосрочную цель.');
       sections.push(`${details.goalResolution.text}${reward.length?`\n${reward.join('\n')}`:''}`);
     }
 
-    if (details.debtCreated>0) sections.push(`💳 Новый долг: +${Math.round(details.debtCreated).toLocaleString('ru-RU')} ₽ — расходы превысили доступные деньги, поэтому недостающая сумма перешла в долг.`);
+    if (details.debtCreated>0) sections.push(`💳 Новый долг: +${Math.round(details.debtCreated).toLocaleString('ru-RU')} ₽ — прямые расходы и/или расходы года превысили доступные деньги. Недостающая сумма перешла в долг.`);
     return sections.join('\n\n');
   }
 
