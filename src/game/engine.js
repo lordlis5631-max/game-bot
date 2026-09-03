@@ -23,6 +23,7 @@ export function newGameState() {
     addiction: 0,
     risk: 5,
     flags: [],
+    seenEvents: [],
     currentEventId: null,
   };
 }
@@ -37,6 +38,7 @@ function normalize(state) {
   state.money = Math.round(state.money);
   state.debt = Math.max(0,Math.round(state.debt));
   state.flags = [...new Set(state.flags || [])];
+  state.seenEvents = [...new Set(state.seenEvents || [])];
   return state;
 }
 
@@ -53,7 +55,31 @@ function yearlyEconomy(state) {
   }
 }
 
+function persistentConsequences(state) {
+  // Hidden stats matter over time: a harmful habit is not just a one-turn penalty.
+  if (state.addiction > 0) {
+    state.health -= Math.ceil(state.addiction / 28);
+    state.money -= Math.round(state.addiction * 180);
+    state.stress += Math.ceil(state.addiction / 40);
+  }
+
+  // Chronic overload gradually affects both wellbeing and performance.
+  if (state.stress >= 75) {
+    state.health -= 3;
+    state.happiness -= 4;
+  } else if (state.stress >= 55) {
+    state.health -= 1;
+    state.happiness -= 2;
+  }
+
+  // Strong relationships and an emergency fund create a small resilience bonus.
+  if ((state.relationships || 0) >= 80) state.stress -= 1;
+  if ((state.flags || []).includes('emergency_fund') && state.debt > 0) state.stress -= 1;
+}
+
 export function currentEvent(state) {
+  if (!Array.isArray(state.flags)) state.flags = [];
+  if (!Array.isArray(state.seenEvents)) state.seenEvents = [];
   const event = eventForState(state);
   state.currentEventId = event.id;
   return event;
@@ -64,14 +90,19 @@ export function applyChoice(state,event,choiceIndex) {
   const choice = event.choices[choiceIndex];
   if (!choice) throw new Error('Unknown choice');
 
+  if (!Array.isArray(state.flags)) state.flags = [];
+  if (!Array.isArray(state.seenEvents)) state.seenEvents = [];
+
   const before = structuredClone(state);
   for (const [key,value] of Object.entries(choice.effects || {})) {
     state[key] = Number(state[key] || 0) + Number(value || 0);
   }
   if (choice.addFlags) state.flags.push(...choice.addFlags);
   if (choice.removeFlags) state.flags = state.flags.filter((f)=>!choice.removeFlags.includes(f));
+  state.seenEvents.push(event.id);
 
   yearlyEconomy(state);
+  persistentConsequences(state);
   state.age += 1;
   state.currentEventId = null;
   normalize(state);
