@@ -1,4 +1,5 @@
 import { scenarioForState, storylineForState } from './scenarioBank.js';
+import { careerSelectionForState, careerStoryForState } from './careers.js';
 
 const c = (text, effects, result, extra = {}) => ({ text, effects, result, ...extra });
 
@@ -126,6 +127,12 @@ const MILESTONES = {
 };
 
 export function eventForState(state) {
+  const careerSelection = careerSelectionForState(state);
+  if (careerSelection) return careerSelection;
+
+  const careerStory = careerStoryForState(state);
+  if (careerStory) return careerStory;
+
   const milestone = MILESTONES[state.age];
   if (milestone) return milestone;
   return storylineForState(state) || scenarioForState(state);
