@@ -10,6 +10,7 @@ import {
   saveApplication, saveGame, saveUserProfile, setFlow, upsertUser,
 } from './db.js';
 import { applyChoice, currentEvent, formatDeltas, formatState, newGameState } from './game/engine.js';
+import { applyTimeAndEnergy, decorateTimeChoices, formatTimeEnergyOutcome, timeEnergySummary } from './game/energy.js';
 import { achievementsFor, lifeType, scoreGame } from './game/scoring.js';
 
 export const bot = new Bot(config.botToken);
@@ -97,12 +98,7 @@ async function startProfileRegistration(ctx,userId,callback=false,afterAction=nu
   await setFlow(userId,'profile','full_name',{afterAction});
   const privacy=registrationInfoKeyboard();
   const attachments=privacy?[privacy]:[];
-  return sendMessage(
-    ctx,
-    `${REGISTRATION_TEXT}\n\nШаг 1/3. Напиши ФИО полностью.`,
-    attachments,
-    callback,
-  );
+  return sendMessage(ctx,`${REGISTRATION_TEXT}\n\nШаг 1/3. Напиши ФИО полностью.`,attachments,callback);
 }
 
 async function showMenu(ctx, callback=false) {
@@ -133,9 +129,7 @@ async function startApplicationMessage(ctx,userId,kind) {
 }
 
 async function continueAfterProfile(ctx,userId,afterAction) {
-  if (['community','party','internship'].includes(afterAction)) {
-    return startApplicationMessage(ctx,userId,afterAction);
-  }
+  if (['community','party','internship'].includes(afterAction)) return startApplicationMessage(ctx,userId,afterAction);
   if (afterAction==='game') {
     return ctx.reply('✅ Профиль готов. Теперь можно начинать игру.',{attachments:[ik([[cb('🎮 Открыть игру','game:menu')],[cb('⬅️ Главное меню','menu')]])]});
   }
@@ -189,9 +183,7 @@ async function handleFlowMessage(ctx,next) {
 
   if (flow.flow_type==='profile' && flow.step==='phone') {
     const phone = cleanPhone(ctx.contactInfo?.tel || '');
-    if (!phone) {
-      return ctx.reply('Для регистрации нужно именно поделиться контактом через кнопку MAX. Вручную номер вводить не нужно.',{attachments:[contactKeyboard()]});
-    }
+    if (!phone) return ctx.reply('Для регистрации нужно именно поделиться контактом через кнопку MAX. Вручную номер вводить не нужно.',{attachments:[contactKeyboard()]});
     data.phone=phone;
     await setFlow(userId,'profile','institution',data);
     return ctx.reply('Шаг 3/3. Напиши название университета, колледжа, школы или другого учебного заведения. Если сейчас нигде не учишься — напиши «не учусь».');
@@ -206,10 +198,7 @@ async function handleFlowMessage(ctx,next) {
     return continueAfterProfile(ctx,userId,afterAction);
   }
 
-  if (flow.step==='interests') {
-    return ctx.reply('Здесь ничего печатать не нужно — выбери подходящие направления кнопками в предыдущем сообщении и нажми «Готово».');
-  }
-
+  if (flow.step==='interests') return ctx.reply('Здесь ничего печатать не нужно — выбери подходящие направления кнопками в предыдущем сообщении и нажми «Готово».');
   return next();
 }
 
@@ -260,7 +249,11 @@ async function gameMenu(ctx) {
   rows.push([cb(active?'🔄 Начать жизнь заново':'▶️ Начать жизнь','game:new')]);
   rows.push([cb('🏆 Рейтинг','top:global')]);
   rows.push([cb('⬅️ Главное меню','menu')]);
-  return ctx.answerOnCallback({message:{text:'🎮 ИГРА «ЖИЗНЬ»\n\nОдин ход = один год жизни. Игра начинается в 16 лет и заканчивается в 60. Каждый год ты выбираешь одно из четырёх действий.\n\nДеньги — не единственная цель: на итог влияют здоровье, счастье, навыки, карьера, отношения, репутация, энергия, нагрузка, финансовые решения и достижения.\n\nЦель — набрать как можно больше очков и попасть в рейтинг.',attachments:[ik(rows)]}});
+  return ctx.answerOnCallback({message:{text:'🎮 ИГРА «ЖИЗНЬ»\n\nОдин ход = один год жизни. Игра начинается в 16 лет и заканчивается в 60. Каждый год ты выбираешь одно из четырёх действий.\n\nТеперь у тебя есть ещё два ограниченных ресурса: ⚡ энергия и 🕒 время. Работа, проекты, близкие люди и высокая ответственность занимают часть года. Если выбранное действие не помещается в оставшееся время, растут усталость и стресс.\n\nЦель — набрать как можно больше очков и построить жизнь, которая не развалится от перегрузки.',attachments:[ik(rows)]}});
+}
+
+function freshGameState() {
+  return {...newGameState(),energy:75};
 }
 
 async function newGame(ctx) {
@@ -268,14 +261,14 @@ async function newGame(ctx) {
   if (!userId) return;
   const active = await getActiveGame(userId);
   if (active) return ctx.answerOnCallback({message:{text:'У тебя уже есть незавершённая жизнь. Начать заново? Текущая партия будет закрыта.',attachments:[ik([[cb('Да, начать заново','game:restart')],[cb('Нет, продолжить','game:continue')]])]}});
-  const game = await createGame(userId,newGameState());
+  const game = await createGame(userId,freshGameState());
   return renderTurn(ctx,game,true);
 }
 
 async function restartGame(ctx) {
   const userId = await requireProfileForCallback(ctx,'game');
   if (!userId) return;
-  const game = await createGame(userId,newGameState());
+  const game = await createGame(userId,freshGameState());
   return renderTurn(ctx,game,true);
 }
 
@@ -285,10 +278,11 @@ function turnKeyboard(gameId,event) {
 
 async function renderTurn(ctx,game,callback=true) {
   const state=game.state;
-  const event=currentEvent(state);
+  if (!Number.isFinite(Number(state.energy))) state.energy=75;
+  const event=decorateTimeChoices(currentEvent(state),state);
   const score=scoreGame(state);
   await saveGame(game.id,state,game.event_history || [],score);
-  const text=`📅 ${state.age} лет\n\n${formatState(state,score)}\n\n🎲 ${event.title}\n${event.text}\n\nЧто выберешь?`;
+  const text=`📅 ${state.age} лет\n\n${formatState(state,score)}\n${timeEnergySummary(state)}\n\n🎲 ${event.title}\n${event.text}\n\n⏱ Число на кнопке — сколько единиц времени потребует решение в этом году.\nЧто выберешь?`;
   const message={text,attachments:[turnKeyboard(game.id,event)]};
   return callback ? ctx.answerOnCallback({message}) : ctx.reply(text,{attachments:message.attachments});
 }
@@ -307,25 +301,31 @@ async function chooseGame(ctx,gameId,eventId,choiceIndex) {
   const game = await getActiveGame(userId);
   if (!game || String(game.id)!==String(gameId)) return ctx.answerOnCallback({notification:'Эта партия уже не активна.'});
   const state=game.state;
-  const event=currentEvent(state);
+  if (!Number.isFinite(Number(state.energy))) state.energy=75;
+  const beforeTurn=structuredClone(state);
+  const event=decorateTimeChoices(currentEvent(state),state);
   if (event.id!==eventId) return ctx.answerOnCallback({notification:'Этот ход уже завершён.'});
   const ageBefore=state.age;
-  const outcome=applyChoice(state,event,Number(choiceIndex));
-  const history=[...(game.event_history || []),{age:ageBefore,eventId,choice:Number(choiceIndex)}];
+  const choiceIndexNumber=Number(choiceIndex);
+  const outcome=applyChoice(state,event,choiceIndexNumber);
+  const timeEnergy=applyTimeAndEnergy(state,event.choices[choiceIndexNumber],beforeTurn);
+  outcome.score=scoreGame(state);
+  const history=[...(game.event_history || []),{age:ageBefore,eventId,choice:choiceIndexNumber}];
 
   if (outcome.finished) {
-    const score=scoreGame(state);
+    const score=outcome.score;
     await finishGame(game.id,state,history,score);
     const ach=achievementsFor(state);
     const type=lifeType(state);
     const rank=await getRank(userId);
     const rankText=rank ? `\n🏆 Место в рейтинге: ${rank.rank} из ${rank.total}` : '';
-    return ctx.answerOnCallback({message:{text:`🏁 Жизнь завершена\n\n${outcome.result}\n\n${formatState(state,score)}\n\n🧭 Тип жизни: ${type}\n🏅 Достижения: ${ach.length?ach.join(', '):'пока без особых достижений'}${rankText}\n\nИтог: ⭐ ${score} очков`,attachments:[ik([[cb('🏆 Рейтинг','top:global')],[cb('🔄 Прожить другую жизнь','game:restart')],[cb('⬅️ Главное меню','menu')]])]}});
+    return ctx.answerOnCallback({message:{text:`🏁 Жизнь завершена\n\n${outcome.result}\n\n${formatTimeEnergyOutcome(timeEnergy)}\n\n${formatState(state,score)}\n${timeEnergySummary(state)}\n\n🧭 Тип жизни: ${type}\n🏅 Достижения: ${ach.length?ach.join(', '):'пока без особых достижений'}${rankText}\n\nИтог: ⭐ ${score} очков`,attachments:[ik([[cb('🏆 Рейтинг','top:global')],[cb('🔄 Прожить другую жизнь','game:restart')],[cb('⬅️ Главное меню','menu')]])]}});
   }
 
   await saveGame(game.id,state,history,outcome.score);
   const deltas=formatDeltas(outcome.deltas);
-  return ctx.answerOnCallback({message:{text:`✅ ${outcome.result}\n\n${deltas || 'Характеристики почти не изменились.'}\n\nТебе исполнилось ${state.age}.\n⭐ Текущие очки: ${outcome.score}`,attachments:[ik([[cb('➡️ Следующий год','game:continue')],[cb('📊 Показатели','game:continue')]])]}});
+  const timeText=formatTimeEnergyOutcome(timeEnergy);
+  return ctx.answerOnCallback({message:{text:`✅ ${outcome.result}\n\n${deltas || 'Характеристики почти не изменились.'}\n\n${timeText}\n\nТебе исполнилось ${state.age}.\n⚡ Энергия: ${state.energy}/100\n⭐ Текущие очки: ${outcome.score}`,attachments:[ik([[cb('➡️ Следующий год','game:continue')],[cb('📊 Показатели','game:continue')]])]}});
 }
 
 async function showTop(ctx,mode) {
