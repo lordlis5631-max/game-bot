@@ -2,6 +2,7 @@ import { eventForState } from './events.js';
 import { scoreGame } from './scoring.js';
 import { careerLabel, estimateAnnualIncome } from './careers.js';
 import { careerMove, careerProgress, careerTitle } from './careerTitles.js';
+import { applySpecializationIncome, specializationLabel } from './specializations.js';
 
 const STAT_KEYS = ['health','happiness','skills','reputation','relationships','stress','financialLiteracy','socialCapital','entrepreneurship','addiction','risk'];
 const clamp = (v,min,max) => Math.max(min,Math.min(max,v));
@@ -18,6 +19,7 @@ export function newGameState() {
     reputation: 10,
     career: 0,
     profession: null,
+    specialization: null,
     careerFamily: null,
     relationships: 50,
     stress: 10,
@@ -46,10 +48,14 @@ function normalize(state) {
   return state;
 }
 
+export function annualIncomeForState(state) {
+  return applySpecializationIncome(state,estimateAnnualIncome(state));
+}
+
 function yearlyEconomy(state) {
   if (state.age < 18) return;
 
-  const income = estimateAnnualIncome(state);
+  const income = annualIncomeForState(state);
   if (state.profession) {
     // Income is a game-balance estimate, not labour-market statistics. A large part of gross income
     // is assumed to be spent on everyday life, taxes and recurring costs, so only the remainder
@@ -149,6 +155,7 @@ export function formatDeltas(deltas) {
   return deltas.slice(0,7).map((change)=>{
     if (change.key === 'careerTitle') {
       if (change.kind === 'start') return `🎯 Карьера началась: ${change.to}`;
+      if (change.kind === 'specialization') return `🧭 Специализация определена: ${change.to}`;
       if (change.kind === 'promotion') return `🎉 Повышение: ${change.from} → ${change.to}`;
       return `🔁 Новая должность: ${change.from} → ${change.to}`;
     }
@@ -159,7 +166,8 @@ export function formatDeltas(deltas) {
 
 export function formatState(state,score=scoreGame(state)) {
   const profession = careerLabel(state);
-  const annualIncome = state.profession ? `\n💵 Игровой доход: ${estimateAnnualIncome(state).toLocaleString('ru-RU')} ₽/год` : '';
+  const specialization = state.specialization ? `\n🧭 Специализация: ${specializationLabel(state)}` : '';
+  const annualIncome = state.profession ? `\n💵 Игровой доход: ${annualIncomeForState(state).toLocaleString('ru-RU')} ₽/год` : '';
   const title = state.profession ? `\n🏷 Должность: ${careerTitle(state)}` : '';
   const progress = state.profession ? careerProgress(state) : null;
   const next = progress?.maxed
@@ -167,5 +175,5 @@ export function formatState(state,score=scoreGame(state)) {
     : progress?.nextTitle
       ? `\n🎯 Следующая ступень: ${progress.nextTitle} (ещё ${progress.levelsToNext} ур.)`
       : '';
-  return `👤 Возраст: ${state.age}\n💰 Деньги: ${state.money.toLocaleString('ru-RU')} ₽\n💳 Долг: ${state.debt.toLocaleString('ru-RU')} ₽\n❤️ Здоровье: ${state.health}/100\n😊 Счастье: ${state.happiness}/100\n🧠 Навыки: ${state.skills}/100\n👥 Репутация: ${state.reputation}/100\n💼 Профессия: ${profession}${title}\n📈 Карьерный уровень: ${state.career}/10${next}${annualIncome}\n🤝 Отношения: ${state.relationships}/100\n⭐ Текущие очки: ${score}`;
+  return `👤 Возраст: ${state.age}\n💰 Деньги: ${state.money.toLocaleString('ru-RU')} ₽\n💳 Долг: ${state.debt.toLocaleString('ru-RU')} ₽\n❤️ Здоровье: ${state.health}/100\n😊 Счастье: ${state.happiness}/100\n🧠 Навыки: ${state.skills}/100\n👥 Репутация: ${state.reputation}/100\n💼 Профессия: ${profession}${specialization}${title}\n📈 Карьерный уровень: ${state.career}/10${next}${annualIncome}\n🤝 Отношения: ${state.relationships}/100\n⭐ Текущие очки: ${score}`;
 }
