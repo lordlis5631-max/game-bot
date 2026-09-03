@@ -6,6 +6,7 @@ import { applySpecializationIncome, specializationLabel } from './specialization
 import { chanceForState, resolveChance } from './chanceChecks.js';
 import { evaluateGoal, goalProgressText, goalSelectionForState, startGoal } from './goals.js';
 import { applyProjectAction, projectEventForState, projectProgressText, projectSelectionForState } from './projects.js';
+import { applyNpcChoice, decorateNpcEvent, ensureNpcState, npcEventForState, npcSummaryText } from './npcs.js';
 
 const STAT_KEYS = ['health','happiness','skills','reputation','relationships','stress','financialLiteracy','socialCapital','entrepreneurship','addiction','risk'];
 const clamp = (v,min,max) => Math.max(min,Math.min(max,v));
@@ -57,6 +58,7 @@ export function newGameState() {
     activeProject:null,
     projectHistory:[],
     completedProjects:0,
+    npcs:{},
     flags:[],
     seenEvents:[],
     currentEventId:null,
@@ -78,6 +80,7 @@ function normalize(state) {
   state.seenEvents=[...new Set(state.seenEvents||[])];
   state.goalHistory=Array.isArray(state.goalHistory)?state.goalHistory:[];
   state.projectHistory=Array.isArray(state.projectHistory)?state.projectHistory:[];
+  ensureNpcState(state);
   return state;
 }
 
@@ -174,6 +177,8 @@ function dynamicEventForState(state) {
   if (goal) return goal;
   const projectSelection=projectSelectionForState(state);
   if (projectSelection) return projectSelection;
+  const npc=npcEventForState(state);
+  if (npc) return npc;
   if (!RESERVED_PROJECT_AGES.has(Number(state.age))) {
     const project=projectEventForState(state);
     if (project) return project;
@@ -209,8 +214,9 @@ function effectLines(effects={},reason='Результат игрового со
 export function currentEvent(state) {
   if (!Array.isArray(state.flags)) state.flags=[];
   if (!Array.isArray(state.seenEvents)) state.seenEvents=[];
+  ensureNpcState(state);
   const base=dynamicEventForState(state)||eventForState(state);
-  const event=decorateChanceChoices(clarifyEvent(base),state);
+  const event=decorateChanceChoices(decorateNpcEvent(clarifyEvent(base),state),state);
   state.currentEventId=event.id;
   return event;
 }
@@ -221,6 +227,7 @@ export function applyChoice(state,event,choiceIndex) {
   if (!choice) throw new Error('Unknown choice');
   if (!Array.isArray(state.flags)) state.flags=[];
   if (!Array.isArray(state.seenEvents)) state.seenEvents=[];
+  ensureNpcState(state);
 
   const before=structuredClone(state);
   const direct=directChoiceDetails(event,choice,choiceIndex);
@@ -233,6 +240,7 @@ export function applyChoice(state,event,choiceIndex) {
   if (choice.addFlags) state.flags.push(...choice.addFlags);
   if (choice.removeFlags) state.flags=state.flags.filter((flag)=>!choice.removeFlags.includes(flag));
 
+  const npc=applyNpcChoice(state,choice);
   const project=applyProjectAction(state,choice,chance);
   const goalStarted=choice.startGoal?startGoal(state,choice.startGoal):null;
   state.seenEvents.push(event.id);
@@ -251,6 +259,7 @@ export function applyChoice(state,event,choiceIndex) {
   deltas.details={
     direct,
     chance,
+    npc,
     project,
     goalStarted,
     goalResolution,
@@ -297,6 +306,8 @@ export function formatDeltas(deltas) {
     if (details.direct.length) {
       sections.push(`🎯 Последствия твоего решения:\n${details.direct.map((item)=>`${item.label}: ${formatSigned(item.value)} — ${item.reason}`).join('\n')}`);
     }
+
+    if (details.npc?.length) sections.push(`👥 Отношения с людьми:\n${details.npc.join('\n')}`);
 
     if (details.chance) {
       const status=details.chance.success?'✅ УСПЕХ':'❌ НЕУДАЧА';
@@ -348,6 +359,7 @@ export function formatDeltas(deltas) {
 }
 
 export function formatState(state,score=scoreGame(state)) {
+  ensureNpcState(state);
   const profession=careerLabel(state);
   const specialization=state.specialization?`\n🧭 Специализация: ${specializationLabel(state)}`:'';
   const annualIncome=state.profession?`\n💵 Игровой доход: ${annualIncomeForState(state).toLocaleString('ru-RU')} ₽/год`:'';
@@ -356,6 +368,7 @@ export function formatState(state,score=scoreGame(state)) {
   const next=progress?.maxed?'\n🏆 Карьерная вершина достигнута':progress?.nextTitle?`\n🎯 Следующая ступень: ${progress.nextTitle} (ещё ${progress.levelsToNext} ур.)`:'';
   const goal=goalProgressText(state);
   const project=projectProgressText(state);
-  const dynamics=`${goal?`\n🎯 Цель: ${goal}`:''}${project?`\n🛠 Активный проект: ${project}`:''}${state.goalsCompleted||state.completedProjects?`\n🏅 Выполнено целей: ${state.goalsCompleted||0} · завершено проектов: ${state.completedProjects||0}`:''}`;
-  return `👤 Возраст: ${state.age}\n💰 Деньги: ${state.money.toLocaleString('ru-RU')} ₽\n💳 Долг: ${state.debt.toLocaleString('ru-RU')} ₽\n❤️ Здоровье: ${state.health}/100\n😊 Счастье: ${state.happiness}/100\n🧠 Навыки: ${state.skills}/100\n👥 Репутация: ${state.reputation}/100\n💼 Профессия: ${profession}${specialization}${title}\n📈 Карьерный уровень: ${state.career}/10${next}${annualIncome}${dynamics}\n🤝 Отношения: ${state.relationships}/100\n⭐ Текущие очки: ${score}`;
+  const people=npcSummaryText(state);
+  const dynamics=`${goal?`\n🎯 Цель: ${goal}`:''}${project?`\n🛠 Активный проект: ${project}`:''}${people?`\n👥 Люди рядом: ${people}`:''}${state.goalsCompleted||state.completedProjects?`\n🏅 Выполнено целей: ${state.goalsCompleted||0} · завершено проектов: ${state.completedProjects||0}`:''}`;
+  return `👤 Возраст: ${state.age}\n💰 Деньги: ${state.money.toLocaleString('ru-RU')} ₽\n💳 Долг: ${state.debt.toLocaleString('ru-RU')} ₽\n❤️ Здоровье: ${state.health}/100\n😊 Счастье: ${state.happiness}/100\n🧠 Навыки: ${state.skills}/100\n👥 Репутация: ${state.reputation}/100\n💼 Профессия: ${profession}${specialization}${title}\n📈 Карьерный уровень: ${state.career}/10${next}${annualIncome}${dynamics}\n🤝 Общие отношения: ${state.relationships}/100\n⭐ Текущие очки: ${score}`;
 }
