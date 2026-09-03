@@ -4,14 +4,14 @@
   "private": true,
   "type": "module",
   "description": "MAX chatbot for ANO Agency for Game Industry Development: community, events, internships and a life simulator game.",
-  "engines": { "node": ">=20" },
+  "engines": { "node": ">=20.19.0" },
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
     "test": "node --test"
   },
   "dependencies": {
-    "@maxhub/max-bot-api": "^0.2.2",
+    "@maxhub/max-bot-api": "^0.3.1",
     "dotenv": "^16.6.1",
     "pg": "^8.16.3"
   }
