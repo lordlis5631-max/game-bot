@@ -22,6 +22,12 @@ export function chanceForState(state,check={}) {
   else if ((state?.stress || 0) >= 55) chance -= 4;
   if ((state?.health || 100) <= 35) chance -= 6;
 
+  const energy=Number(state?.energy ?? 75);
+  if (energy<=15) chance-=12;
+  else if (energy<=30) chance-=8;
+  else if (energy<=45) chance-=4;
+  else if (energy>=85) chance+=2;
+
   return Math.round(clamp(chance,10,95));
 }
 
