@@ -1,4 +1,5 @@
 import { CAREERS } from './careers.js';
+import { specializationRanksForState } from './specializations.js';
 
 export const CAREER_RANKS = {
   game_dev: [
@@ -96,6 +97,10 @@ export const CAREER_RANKS = {
 const clampLevel = (value) => Math.max(0, Math.min(10, Number(value || 0)));
 
 function ranksFor(stateOrKey) {
+  if (typeof stateOrKey !== 'string') {
+    const specialized = specializationRanksForState(stateOrKey);
+    if (specialized) return specialized;
+  }
   const key = typeof stateOrKey === 'string' ? stateOrKey : stateOrKey?.profession;
   return CAREER_RANKS[key] || null;
 }
@@ -141,6 +146,9 @@ export function careerMove(before, after) {
   }
 
   const beforeTitle = careerTitle(before);
+  if (before?.specialization !== after?.specialization && after?.specialization) {
+    return { kind: 'specialization', from: beforeTitle, to: afterTitle };
+  }
   if (beforeTitle === afterTitle) return null;
   const kind = Number(after.career || 0) > Number(before.career || 0) ? 'promotion' : 'change';
   return { kind, from: beforeTitle, to: afterTitle };
