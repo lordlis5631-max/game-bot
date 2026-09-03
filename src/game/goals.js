@@ -103,6 +103,8 @@ export function evaluateGoal(state) {
   const config = GOALS[goal.id];
   if (!config) return null;
 
+  if (Number(state.age) <= Number(goal.startedAge) + 1) return null;
+
   if (config.achieved(state,goal)) {
     applyEffects(state,config.rewardEffects);
     state.goalsCompleted = Number(state.goalsCompleted || 0) + 1;
