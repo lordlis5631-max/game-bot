@@ -78,12 +78,11 @@ function recoveryBonus(choice) {
   return bonus;
 }
 
-export function applyTimeAndEnergy(state,choice) {
-  if (!Number.isFinite(Number(state.energy))) state.energy=75;
-  const beforeEnergy=Number(state.energy);
-  const beforeStress=Number(state.stress || 0);
-  const capacity=timeCapacityForState(state);
-  const commitments=commitmentTimeForState(state);
+export function applyTimeAndEnergy(state,choice,contextState=state) {
+  const contextEnergy=Number.isFinite(Number(contextState?.energy))?Number(contextState.energy):75;
+  if (!Number.isFinite(Number(state.energy))) state.energy=contextEnergy;
+  const capacity=timeCapacityForState(contextState);
+  const commitments=commitmentTimeForState(contextState);
   const actionTime=estimateActionTime(choice);
   const total=commitments.used+actionTime;
   const overload=Math.max(0,total-capacity);
@@ -122,6 +121,9 @@ export function applyTimeAndEnergy(state,choice) {
   }
 
   state.energy=projectedEnergy;
+  state.stress=clamp(Number(state.stress || 0),0,100);
+  state.happiness=clamp(Number(state.happiness || 0),0,100);
+  state.health=clamp(Number(state.health || 0),0,100);
 
   let status='balanced';
   if (overload>=2) status='critical';
@@ -137,13 +139,28 @@ export function applyTimeAndEnergy(state,choice) {
     overload,
     spare,
     status,
-    energyBefore:beforeEnergy,
+    energyBefore:contextEnergy,
     energyAfter:state.energy,
-    energyDelta:state.energy-beforeEnergy,
-    stressDelta:Number(state.stress || 0)-beforeStress,
+    energyDelta:state.energy-contextEnergy,
+    stressDelta,
     happinessDelta,
     healthDelta,
   };
+}
+
+export function formatTimeEnergyOutcome(outcome) {
+  if (!outcome) return '';
+  const reasons=outcome.commitmentReasons.length?`\nПостоянные обязательства: ${outcome.commitmentReasons.join(', ')}.`:'';
+  const loadLine=`🕒 Время: обязательства ${outcome.commitments} + решение ${outcome.actionTime} = ${outcome.total}/${outcome.capacity}.${reasons}`;
+  let explanation='Год получился сбалансированным: выбранное действие поместилось в доступное время.';
+  if (outcome.status==='critical') explanation=`Ты взял на себя слишком много: перегрузка на ${outcome.overload} ед. времени сильно ударила по ресурсу.`;
+  else if (outcome.status==='overload') explanation='Ты немного превысил доступное время. Часть результата оплачена усталостью и дополнительным стрессом.';
+  else if (outcome.status==='recovery') explanation='После обязательств и выбранного действия осталось достаточно свободного времени на восстановление.';
+  const changes=[`⚡ Энергия: ${outcome.energyBefore} → ${outcome.energyAfter} (${outcome.energyDelta>=0?'+':''}${outcome.energyDelta})`];
+  if (outcome.stressDelta) changes.push(`😰 Стресс от нагрузки: ${outcome.stressDelta>0?'+':''}${outcome.stressDelta}`);
+  if (outcome.healthDelta) changes.push(`❤️ Здоровье из-за уровня энергии: ${outcome.healthDelta}`);
+  if (outcome.happinessDelta) changes.push(`😊 Счастье из-за нагрузки: ${outcome.happinessDelta}`);
+  return `⚡ Энергия и время года:\n${loadLine}\n${explanation}\n${changes.join('\n')}`;
 }
 
 export function timeEnergySummary(state) {
