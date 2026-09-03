@@ -16,7 +16,7 @@ export function achievementsFor(state) {
   if (state.debt === 0 && state.financialLiteracy >= 70) result.push('📈 Финансовый стратег');
   if (Number(state.goalsCompleted || 0) >= 2) result.push('🎯 Целеустремлённый');
   if (Number(state.completedProjects || 0) >= 2) result.push('🛠 Проектный лидер');
-  if (closeNpcCount(state,3) >= 3) result.push('🤝 Крепкий круг');
+  if (closeNpcCount(state,65) >= 3) result.push('🤝 Крепкий круг');
   if (Object.values(state.npcs || {}).some((npc)=>Number(npc.score || 0) >= 90)) result.push('❤️ Связь на годы');
   return result;
 }
