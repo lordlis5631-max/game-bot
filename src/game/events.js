@@ -1,5 +1,6 @@
 import { scenarioForState, storylineForState } from './scenarioBank.js';
 import { careerSelectionForState, careerStoryForState } from './careers.js';
+import { specializationSelectionForState, specializationStoryForState } from './specializations.js';
 
 const c = (text, effects, result, extra = {}) => ({ text, effects, result, ...extra });
 
@@ -129,6 +130,12 @@ const MILESTONES = {
 export function eventForState(state) {
   const careerSelection = careerSelectionForState(state);
   if (careerSelection) return careerSelection;
+
+  const specializationSelection = specializationSelectionForState(state);
+  if (specializationSelection) return specializationSelection;
+
+  const specializationStory = specializationStoryForState(state);
+  if (specializationStory) return specializationStory;
 
   const careerStory = careerStoryForState(state);
   if (careerStory) return careerStory;
