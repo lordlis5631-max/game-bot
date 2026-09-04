@@ -6,6 +6,7 @@ import {
 } from '../src/game/engine.js';
 import { decorateChoiceCosts, hydrateEventReasons } from '../src/game/explanations.js';
 import { SCENARIO_BANK } from '../src/game/scenarioBank.js';
+import { applyProjectAction } from '../src/game/projects.js';
 import { normalizeInstitution } from '../src/institutions.js';
 
 test('rendered choices expose direct money cost and attach a reason for every direct effect',()=>{
@@ -66,6 +67,36 @@ test('quick mode skips quiet years but preserves key early milestones',()=>{
   assert.equal(state.age,24);
   assert.equal(outcome.yearsElapsed,2);
   assert.match(formatCompactOutcome(outcome),/Прошло 2 года/);
+});
+
+test('quick mode gives a launched project a resolution checkpoint at age 28',()=>{
+  const state=newGameState({mode:'quick'});
+  Object.assign(state,{age:26,profession:'game_dev',specialization:'game_design',career:3,skills:70,reputation:60,money:250000});
+  let event=currentEvent(state);
+  assert.equal(event.id,'project-selection-26');
+  applyChoice(state,event,0);
+  assert.equal(state.age,28);
+  assert.ok(state.activeProject);
+
+  event=currentEvent(state);
+  assert.match(event.id,/^project-indie_game-28-/);
+  assert.ok(event.choices.every((choice)=>/🎲\s*\d+%/.test(choice.text)));
+});
+
+test('quick project resolution always closes the multi-year project attempt',()=>{
+  const success=newGameState({mode:'quick'});
+  Object.assign(success,{age:28,activeProject:{id:'indie_game',title:'Инди-игра',emoji:'🎮',progress:0,status:'active',startedAge:26,lastActionAge:26}});
+  const successResult=applyProjectAction(success,{projectAction:{successProgress:28,failureProgress:8}},{success:true});
+  assert.equal(success.activeProject,null);
+  assert.equal(success.completedProjects,1);
+  assert.ok(successResult.notes.some((note)=>/100\/100|завершён/i.test(note)));
+
+  const failure=newGameState({mode:'quick'});
+  Object.assign(failure,{age:28,activeProject:{id:'indie_game',title:'Инди-игра',emoji:'🎮',progress:0,status:'active',startedAge:26,lastActionAge:26}});
+  const failureResult=applyProjectAction(failure,{projectAction:{successProgress:28,failureProgress:8}},{success:false});
+  assert.equal(failure.activeProject,null);
+  assert.equal(failure.projectHistory.at(-1)?.status,'failed');
+  assert.ok(failureResult.notes.some((note)=>/закрыт|завершается/i.test(note)));
 });
 
 test('years without automatic economy do not produce a technical economy paragraph',()=>{
