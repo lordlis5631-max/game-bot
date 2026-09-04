@@ -7,14 +7,32 @@ const stripAction = (text='') => text
 
 const rub=(value)=>Math.abs(Math.round(Number(value)||0)).toLocaleString('ru-RU');
 
+function moneyReason(action,value) {
+  const amount=Number(value)||0;
+  const low=String(action).toLowerCase();
+  if (amount>0) {
+    if (/(работ|подработ|заказ|коммер|смен|вакан)/i.test(low)) return `${rub(amount)} ₽ — заработок за работу или выполненную задачу.`;
+    if (/(продаж|релиз|продукт|проект|бизнес)/i.test(low)) return `${rub(amount)} ₽ — доход от проекта, продукта или результата работы.`;
+    if (/(услов|переговор|повыш|роль)/i.test(low)) return `${rub(amount)} ₽ — дополнительный доход после изменения условий или ответственности.`;
+    return `${rub(amount)} ₽ — дополнительный доход, связанный с выбранным действием «${action}».`;
+  }
+  if (/(уч|курс|образован|экзам|модул|поступ)/i.test(low)) return `${rub(amount)} ₽ ушли на обучение, материалы или подготовку.`;
+  if (/(настав|эксперт|специалист|консульт)/i.test(low)) return `${rub(amount)} ₽ ушли на помощь, консультацию или работу специалиста.`;
+  if (/(оборуд|техник|инструмент)/i.test(low)) return `${rub(amount)} ₽ ушли на оборудование, инструменты или материалы.`;
+  if (/(игр|прототип|mvp|проект|продукт|медиа|дизайн|стартап|дело)/i.test(low)) return `${rub(amount)} ₽ ушли на сервисы, материалы и производство проекта.`;
+  if (/(жиль|взнос|квартир|дом)/i.test(low)) return `${rub(amount)} ₽ направлены на жильё или первоначальный взнос.`;
+  if (/(инвест|влож)/i.test(low)) return `${rub(amount)} ₽ направлены в выбранную инвестицию.`;
+  if (/(спорт|чекап|здоров|врач|леч)/i.test(low)) return `${rub(amount)} ₽ ушли на услуги, занятия или расходы, связанные со здоровьем.`;
+  if (/(поезд|путеше|мечт|город)/i.test(low)) return `${rub(amount)} ₽ ушли на дорогу, проживание и связанные расходы.`;
+  if (/(мероприят|фестив|игротек|встреч)/i.test(low)) return `${rub(amount)} ₽ ушли на организацию, площадку или материалы для события.`;
+  return `${rub(amount)} ₽ — прямые расходы, необходимые для действия «${action}».`;
+}
+
 function fallbackReason(key,value,choice) {
   const positive=Number(value)>0;
   const action=stripAction(choice?.text || 'выбранное действие');
-  const amount=Number(value)||0;
   const reasons={
-    money: positive
-      ? `Доход по действию «${action}»: +${rub(amount)} ₽.`
-      : `Расход по действию «${action}»: -${rub(amount)} ₽.`,
+    money: moneyReason(action,value),
     health: positive
       ? `«${action}» улучшило восстановление или снизило нагрузку на организм.`
       : `«${action}» добавило нагрузку на организм или ухудшило восстановление.`,
@@ -165,7 +183,7 @@ export function clarifyEventContent(event) {
           ...choice,
           text:labels[index],
           effects,
-          result:'Ты согласился попробовать один раз. Денег это не стоило — вейп предложили знакомые. В игре это немного снижает здоровье и создаёт риск повторения.',
+          result:'Ты согласился попробовать один раз. Денег это не стоило — вейп предложили знакомые. Самочувствие немного ухудшилось, а риск повторения вырос.',
         };
       }),
     };
