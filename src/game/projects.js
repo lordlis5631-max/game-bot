@@ -47,11 +47,15 @@ export function projectSelectionForState(state) {
   return {
     id:`project-selection-${state.age}`,
     title:'🛠 Проект, который будет жить несколько лет',
-    text:'Теперь можно взять долгосрочный проект. Он не завершится одной кнопкой: каждые несколько лет придётся выбирать, как двигать его дальше. Некоторые решения будут рискованными — шанс успеха зависит от твоих навыков, связей, финансовой грамотности, стресса и других характеристик.',
+    text:state.mode==='quick'
+      ? 'Выбери долгосрочный проект. В быстром режиме следующий проектный эпизод будет итоговой проверкой нескольких лет работы: успех доведёт проект до результата, неудача закроет эту попытку без награды.'
+      : 'Теперь можно взять долгосрочный проект. Он не завершится одной кнопкой: каждые несколько лет придётся выбирать, как двигать его дальше. Некоторые решения будут рискованными — шанс успеха зависит от твоих навыков, связей, финансовой грамотности, стресса и других характеристик.',
     choices:Object.entries(PROJECTS).map(([id,project])=>({
       text:`${project.emoji} ${project.title}`,
       effects:{ money:-project.startCost, ...project.startEffects },
-      result:`Ты запустил проект «${project.title}». Первый этап — 0/100, дальше придётся постепенно доводить его до результата.`,
+      result:state.mode==='quick'
+        ? `Ты запустил проект «${project.title}». Следующий проектный эпизод подведёт итог нескольких лет работы.`
+        : `Ты запустил проект «${project.title}». Первый этап — 0/100, дальше придётся постепенно доводить его до результата.`,
       startProject:id,
     })),
   };
@@ -114,7 +118,9 @@ export function projectEventForState(state) {
   return {
     id:`project-${project.id}-${state.age}-${project.progress}`,
     title:`${project.emoji} Проект «${project.title}»: ${project.progress}/100`,
-    text:'Проект не движется сам. Выбери способ продвинуть его на этом этапе. Проценты на кнопках — реальный игровой шанс успеха именно для твоего текущего состояния.',
+    text:state.mode==='quick'
+      ? 'Прошло несколько лет работы над проектом. Выбери финальную стратегию этого этапа. Процент на кнопке — реальный шанс довести проект до результата; при неудаче эта проектная попытка завершится без награды.'
+      : 'Проект не движется сам. Выбери способ продвинуть его на этом этапе. Проценты на кнопках — реальный игровой шанс успеха именно для твоего текущего состояния.',
     choices:[
       actionChoice(state,'sprint','🔥 Устроить рабочий спринт',{stress:2},28,8),
       actionChoice(state,'partner','🤝 Найти партнёра или эксперта',{money:-5000},24,6),
@@ -136,7 +142,26 @@ export function startProject(state,id) {
     startedAge:Number(state.age),
     lastActionAge:Number(state.age),
   };
-  return `🛠 Проект запущен: ${config.emoji} ${config.title}. Прогресс 0/100.`;
+  return state.mode==='quick'
+    ? `🛠 Проект запущен: ${config.emoji} ${config.title}. Следующая проектная развилка подведёт итог нескольких лет работы.`
+    : `🛠 Проект запущен: ${config.emoji} ${config.title}. Прогресс 0/100.`;
+}
+
+function completeProject(state,project,notes) {
+  const config=PROJECTS[project.id];
+  const rewardEffects={ ...(config?.rewardEffects || {}) };
+  applyEffects(state,rewardEffects);
+  state.completedProjects=Number(state.completedProjects || 0)+1;
+  state.projectHistory=[...(state.projectHistory || []),{
+    ...project,
+    progress:100,
+    status:'completed',
+    completedAge:Number(state.age),
+  }];
+  state.flags=[...(state.flags || []),`project_completed_${project.id}`];
+  notes.push(`🏁 Проект «${project.title}» завершён. Ты получил награду за доведённый до результата проект.`);
+  state.activeProject=null;
+  return rewardEffects;
 }
 
 export function applyProjectAction(state,choice,chanceOutcome) {
@@ -148,27 +173,40 @@ export function applyProjectAction(state,choice,chanceOutcome) {
 
   const action=choice.projectAction;
   const success=Boolean(chanceOutcome?.success);
-  const progressDelta=success ? Number(action.successProgress || 0) : Number(action.failureProgress || 0);
   const project=state.activeProject;
+
+  if (state.mode==='quick') {
+    if (success) {
+      project.progress=100;
+      project.lastActionAge=Number(state.age);
+      const notes=['✅ Несколько лет работы сложились в результат: проект дошёл до 100/100.'];
+      const rewardEffects=completeProject(state,project,notes);
+      return {notes,rewardEffects};
+    }
+
+    const failedProgress=clamp(Number(project.progress||0)+Math.max(0,Number(action.failureProgress||0)),0,99);
+    project.progress=failedProgress;
+    project.lastActionAge=Number(state.age);
+    state.projectHistory=[...(state.projectHistory||[]),{
+      ...project,
+      status:'failed',
+      failedAge:Number(state.age),
+    }];
+    const notes=[
+      `⚠️ Итоговая проверка не прошла. Проект дошёл до ${failedProgress}/100, но в быстром режиме эта попытка завершается здесь.`,
+      `⛔ Проект «${project.title}» закрыт без финальной награды.`,
+    ];
+    state.activeProject=null;
+    return {notes,rewardEffects:{}};
+  }
+
+  const progressDelta=success ? Number(action.successProgress || 0) : Number(action.failureProgress || 0);
   project.progress=clamp(Number(project.progress || 0)+progressDelta,0,100);
   project.lastActionAge=Number(state.age);
   const notes=[`${success?'✅':'⚠️'} Прогресс проекта: ${progressDelta>=0?'+':''}${progressDelta} → ${project.progress}/100.`];
   let rewardEffects={};
 
-  if (project.progress >= 100) {
-    const config=PROJECTS[project.id];
-    rewardEffects={ ...(config?.rewardEffects || {}) };
-    applyEffects(state,rewardEffects);
-    state.completedProjects=Number(state.completedProjects || 0)+1;
-    state.projectHistory=[...(state.projectHistory || []),{
-      ...project,
-      status:'completed',
-      completedAge:Number(state.age),
-    }];
-    state.flags=[...(state.flags || []),`project_completed_${project.id}`];
-    notes.push(`🏁 Проект «${project.title}» завершён. Ты получил награду за доведённый до результата проект.`);
-    state.activeProject=null;
-  }
+  if (project.progress >= 100) rewardEffects=completeProject(state,project,notes);
   return { notes, rewardEffects };
 }
 
