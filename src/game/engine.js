@@ -13,7 +13,7 @@ import { applyTimeAndEnergy, decorateTimeChoices, formatTimeEnergyOutcome, timeE
 const STAT_KEYS = ['health','happiness','skills','reputation','relationships','stress','financialLiteracy','socialCapital','entrepreneurship','addiction','risk'];
 const clamp = (v,min,max) => Math.max(min,Math.min(max,v));
 const RESERVED_PROJECT_AGES = new Set([16,18,19,20,21,22,23,25,27,29,30,35,38,40,41,45,49,50,54,55,59]);
-export const QUICK_AGES=[16,17,18,19,20,21,22,24,26,31,35,40,45,50,55,59];
+export const QUICK_AGES=[16,17,18,19,20,21,22,24,26,28,31,35,40,45,50,55,59];
 
 const DETAIL_LABELS = {
   money:'💰 Деньги', debt:'💳 Долг', health:'❤️ Здоровье', happiness:'😊 Счастье',
@@ -393,6 +393,7 @@ export function formatCompactOutcome(outcome) {
   const lines=[];
   for (const item of details.direct||[]) lines.push(`${item.label} ${formatSigned(item.value)} — ${item.reason}`);
   if (details.chance) lines.push(`🎲 ${details.chance.success?'Успех':'Неудача'}: ${details.chance.roll}/100 при шансе ${details.chance.chance}%.`);
+  if (details.project?.notes?.length) lines.push(...details.project.notes);
   if (details.economy?.applied) lines.push(`💰 Баланс обычных доходов и расходов за период: ${formatSigned(details.economy.netBeforeDebt-details.economy.debtPayment)} ₽.`);
   if (details.timeEnergy?.overload>0) lines.push(`⚡ Перегрузка: энергия ${details.timeEnergy.energyBefore} → ${details.timeEnergy.energyAfter}.`);
   if (details.debtCreated>0) lines.push(`💳 Новый долг: +${rub(details.debtCreated)}.`);
