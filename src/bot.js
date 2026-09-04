@@ -2,7 +2,7 @@ import { Bot, Keyboard } from '@maxhub/max-bot-api';
 import { config } from './config.js';
 import {
   COMMUNITY_INTERESTS, COMMUNITY_TEXT, INTERNSHIP_INTERESTS, INTERNSHIP_TEXT,
-  PARTY_TEXT, REGISTRATION_TEXT, WELCOME_TEXT,
+  REGISTRATION_TEXT, WELCOME_TEXT,
 } from './content.js';
 import {
   clearFlow, createGame, finishGame, getActiveGame, getAdminStats, getEvent, getFlow,
@@ -22,8 +22,21 @@ const ik = (rows) => Keyboard.inlineKeyboard(rows);
 const cb = (text,payload) => Keyboard.button.callback(text,payload);
 
 function eventButtonLabel(event) {
-  const title=String(event.title||'Мероприятие').replace(/^Тусовка\s*/i,'').trim();
+  const title=String(event.title||'Мероприятие').trim();
   return `🎉 ${title}`.slice(0,48);
+}
+
+function formatEventText(event) {
+  const description=String(event?.description||'').trim();
+  return [
+    `🎉 ${event.title}`,
+    '',
+    description,
+    '',
+    `📅 ${event.date_label}`,
+    `🕒 ${event.time_label}`,
+    `📍 ${event.place}`,
+  ].filter((line,index,lines)=>line!=='' || (index>0 && lines[index-1]!=='' && lines[index+1]!=='')).join('\n').replace(/\n{3,}/g,'\n\n').trim();
 }
 
 function buildMainKeyboard(events=[]) {
@@ -92,7 +105,7 @@ function topKeyboard() {
 
 function gameModeKeyboard() {
   return ik([
-    [cb('⚡ Быстрая жизнь · ~16 решений','game:start:quick')],
+    [cb('⚡ Быстрая жизнь · ~17 решений','game:start:quick')],
     [cb('🧭 Полная жизнь · каждый год','game:start:classic')],
     [cb('⬅️ Назад','game:menu')],
   ]);
@@ -160,8 +173,7 @@ async function showEvent(ctx,code) {
   if (!isProfileComplete(profile)) return startProfileRegistration(ctx,userId,true,`event:${code}`);
   const event=await getEvent(code);
   if (!event || !event.registration_open) return ctx.answerOnCallback({message:{text:'Регистрация на это мероприятие сейчас недоступна.',attachments:[await mainKeyboard()]}});
-  const text=`${PARTY_TEXT({date:event.date_label,time:event.time_label,place:event.place})}\n\n${event.description||''}`.trim();
-  return ctx.answerOnCallback({message:{text,attachments:[eventInfoKeyboard(event)]}});
+  return ctx.answerOnCallback({message:{text:formatEventText(event),attachments:[eventInfoKeyboard(event)]}});
 }
 
 function cleanPhone(input='') {
@@ -313,11 +325,11 @@ async function gameMenu(ctx) {
   const active=await getActiveGame(userId);
   const rows=[];
   if (active) rows.push([cb(`▶️ Продолжить · ${active.age} лет`,'game:continue')]);
-  rows.push([cb(active?'🔄 Начать другую жизнь':'⚡ Быстрая жизнь · ~16 решений','game:mode')]);
+  rows.push([cb(active?'🔄 Начать другую жизнь':'⚡ Быстрая жизнь · ~17 решений','game:mode')]);
   if (!active) rows.push([cb('🧭 Полная жизнь · каждый год','game:start:classic')]);
   rows.push([cb('🏆 Рейтинг','top:global')]);
   rows.push([cb('⬅️ Главное меню','menu')]);
-  const text='🎮 ИГРА «ЖИЗНЬ»\n\nВ каждом эпизоде ты принимаешь решение. Прямые расходы видны заранее на кнопке. После выбора бот показывает только главное, а полный расчёт доступен по кнопке «Подробнее».\n\n⚡ Быстрый режим — около 16 ключевых решений.\n🧭 Полный режим — один ход на каждый год.';
+  const text='🎮 ИГРА «ЖИЗНЬ»\n\nВ каждом эпизоде ты принимаешь решение. Прямые расходы видны заранее на кнопке. После выбора бот показывает только главное, а полный расчёт доступен по кнопке «Подробнее».\n\n⚡ Быстрый режим — около 17 ключевых решений.\n🧭 Полный режим — один ход на каждый год.';
   return ctx.answerOnCallback({message:{text,attachments:[ik(rows)]}});
 }
 
