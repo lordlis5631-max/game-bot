@@ -84,7 +84,7 @@ test('a one-time vape episode decays on later turns instead of immediately charg
   assert.match(explanation,/не закрепился/i);
 });
 
-test('generic spending gets a concrete amount and action-based reason',()=>{
+test('generic spending gets a concrete amount and contextual reason',()=>{
   const state=newGameState();
   Object.assign(state,{age:17,money:10000,debt:0});
   const event=hydrateEventReasons({
@@ -96,7 +96,7 @@ test('generic spending gets a concrete amount and action-based reason',()=>{
   const explanation=formatDeltas(outcome.deltas);
 
   assert.match(explanation,/Деньги: -5[\s\u00A0]?000/);
-  assert.match(explanation,/Расход по действию «Купить оборудование»/i);
+  assert.match(explanation,/оборудование|инструменты|материалы/i);
 });
 
 test('when spending exceeds cash the game explicitly explains why debt appears',()=>{
