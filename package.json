@@ -1,0 +1,20 @@
+{
+  "name": "game-bot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "MAX chatbot for ANO Agency for Game Industry Development: community, events, internships and a life simulator game.",
+  "engines": { "node": ">=20.19.0" },
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "check": "node --check src/config.js && node --check src/db.js && node --check src/content.js && node --check src/institutions.js && node --check src/bot.js && node --check src/index.js && node --check src/game/events.js && node --check src/game/engine.js && node --check src/game/scoring.js && node --check src/game/scenarioBank.js && node --check src/game/careers.js && node --check src/game/careerTitles.js && node --check src/game/specializations.js && node --check src/game/chanceChecks.js && node --check src/game/goals.js && node --check src/game/projects.js && node --check src/game/npcs.js && node --check src/game/energy.js && node --check src/game/explanations.js && node --check scripts/simulate-balance.js",
+    "test": "node --test",
+    "balance": "node scripts/simulate-balance.js"
+  },
+  "dependencies": {
+    "@maxhub/max-bot-api": "^0.3.1",
+    "dotenv": "^16.6.1",
+    "pg": "^8.16.3"
+  }
+}

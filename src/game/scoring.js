@@ -1,0 +1,63 @@
+import { closeNpcCount, npcRelationshipScore } from './npcs.js';
+
+const clamp = (v,min,max) => Math.max(min,Math.min(max,v));
+
+export function achievementsFor(state) {
+  const result = [];
+  if (state.money >= 1_000_000) result.push('💰 Миллионер');
+  if (state.health >= 90) result.push('❤️ ЗОЖ');
+  if (state.skills >= 90) result.push('🧠 Вечный ученик');
+  if (state.career >= 9) result.push('💼 Карьерный максимум');
+  if (state.entrepreneurship >= 60) result.push('🚀 Предприниматель');
+  if (state.relationships >= 90) result.push('👨‍👩‍👧 Человек отношений');
+  if (state.reputation >= 90) result.push('🌟 Репутация');
+  if ((state.flags || []).includes('mentor')) result.push('🧭 Наставник');
+  if ((state.flags || []).includes('legacy')) result.push('🏛 Проект-наследие');
+  if (state.debt === 0 && state.financialLiteracy >= 70) result.push('📈 Финансовый стратег');
+  if (Number(state.goalsCompleted || 0) >= 2) result.push('🎯 Целеустремлённый');
+  if (Number(state.completedProjects || 0) >= 2) result.push('🛠 Проектный лидер');
+  if (closeNpcCount(state,65) >= 3) result.push('🤝 Крепкий круг');
+  if (Object.values(state.npcs || {}).some((npc)=>Number(npc.score || 0) >= 90)) result.push('❤️ Связь на годы');
+  if (Number(state.energy ?? 75)>=85 && Number(state.stress || 0)<=30) result.push('⚡ Устойчивый ритм');
+  return result;
+}
+
+export function scoreGame(state) {
+  const netWorth = state.money - state.debt;
+  const npcPoints=clamp(npcRelationshipScore(state)*1.2,0,420);
+  const energy=clamp(Number(state.energy ?? 75),0,100);
+  const points =
+    clamp(netWorth / 5000, -500, 2500) +
+    state.health * 15 +
+    state.happiness * 15 +
+    state.skills * 12 +
+    state.reputation * 8 +
+    state.career * 120 +
+    state.relationships * 10 +
+    state.financialLiteracy * 5 +
+    state.socialCapital * 4 +
+    state.entrepreneurship * 3 +
+    energy * 3 +
+    Number(state.goalsCompleted || 0) * 220 +
+    Number(state.completedProjects || 0) * 160 +
+    npcPoints +
+    achievementsFor(state).length * 180 -
+    state.stress * 4 -
+    state.addiction * 8 -
+    clamp(state.debt / 5000,0,1000);
+  return Math.round(clamp(points,0,10000));
+}
+
+export function lifeType(state) {
+  const socialDepth=npcRelationshipScore(state)*0.08;
+  const energy=Number(state.energy ?? 75);
+  const options = [
+    ['Предприниматель', state.entrepreneurship + state.risk * 0.2],
+    ['Карьерист', state.career * 10 + state.reputation * 0.4],
+    ['Исследователь', state.skills + state.financialLiteracy * 0.3],
+    ['Человек сообщества', state.socialCapital + state.reputation * 0.5 + socialDepth],
+    ['Человек баланса', state.health * 0.6 + state.happiness * 0.6 + state.relationships * 0.6 + energy*0.25 + socialDepth - state.stress * 0.3],
+    ['Авантюрист', state.risk + state.happiness * 0.35],
+  ];
+  return options.sort((a,b)=>b[1]-a[1])[0][0];
+}
