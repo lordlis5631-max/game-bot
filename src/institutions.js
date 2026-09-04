@@ -8,12 +8,12 @@ export const POPULAR_INSTITUTIONS = [
 ];
 
 const ALIASES = [
-  [/\b(уунит|уфимск.*университет.*наук.*технолог)\b/i,'uunit'],
-  [/\b(угнту|нефтян.*университет|уфимск.*нефтян)\b/i,'ugntu'],
-  [/\b(бгпу|акмулл)\b/i,'bgpu'],
-  [/\b(бгму|медицинск.*университет)\b/i,'bgmu'],
-  [/\b(бгау|аграрн.*университет)\b/i,'bgau'],
-  [/\b(угии|исмагилов|институт.*искусств)\b/i,'ugii'],
+  [/(уунит|уфимск.*университет.*наук.*технолог)/i,'uunit'],
+  [/(угнту|нефтян.*университет|уфимск.*нефтян)/i,'ugntu'],
+  [/(бгпу|акмулл)/i,'bgpu'],
+  [/(бгму|медицинск.*университет)/i,'bgmu'],
+  [/(бгау|аграрн.*университет)/i,'bgau'],
+  [/(угии|исмагилов|институт.*искусств)/i,'ugii'],
 ];
 
 export function institutionByKey(key) {
@@ -23,7 +23,7 @@ export function institutionByKey(key) {
 export function normalizeInstitution(input='') {
   const display=String(input).replace(/\s+/g,' ').trim();
   if (!display) return {key:'',display:''};
-  if (/^(не\s*учусь|не учусь|нет)$/i.test(display)) return {key:'not_studying',display:'Не учусь'};
+  if (/^(не\s*учусь|нет)$/i.test(display)) return {key:'not_studying',display:'Не учусь'};
   for (const [pattern,key] of ALIASES) {
     if (pattern.test(display)) {
       const known=institutionByKey(key);
