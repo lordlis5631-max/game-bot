@@ -1,5 +1,7 @@
 import pg from 'pg';
 import { config } from './config.js';
+import { PARTY_INTERESTS } from './content.js';
+import { normalizeInstitution } from './institutions.js';
 
 const { Pool } = pg;
 export const pool = new Pool({ connectionString: config.databaseUrl });
@@ -11,6 +13,7 @@ export async function initDb() {
       first_name TEXT,
       username TEXT,
       institution TEXT,
+      institution_key TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
@@ -18,6 +21,7 @@ export async function initDb() {
     ALTER TABLE users ADD COLUMN IF NOT EXISTS full_name TEXT;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS phone TEXT;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS registered_at TIMESTAMPTZ;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS institution_key TEXT;
 
     CREATE TABLE IF NOT EXISTS flows (
       max_user_id TEXT PRIMARY KEY REFERENCES users(max_user_id) ON DELETE CASCADE,
@@ -26,19 +30,38 @@ export async function initDb() {
       data JSONB NOT NULL DEFAULT '{}'::jsonb,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+
     CREATE TABLE IF NOT EXISTS applications (
       id BIGSERIAL PRIMARY KEY,
       submission_key TEXT UNIQUE NOT NULL,
       max_user_id TEXT NOT NULL REFERENCES users(max_user_id) ON DELETE CASCADE,
       kind TEXT NOT NULL,
-      full_name TEXT NOT NULL,
-      phone TEXT NOT NULL,
-      institution TEXT NOT NULL,
+      full_name TEXT,
+      phone TEXT,
+      institution TEXT,
       interests JSONB NOT NULL DEFAULT '[]'::jsonb,
       event_code TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    ALTER TABLE applications ALTER COLUMN full_name DROP NOT NULL;
+    ALTER TABLE applications ALTER COLUMN phone DROP NOT NULL;
+    ALTER TABLE applications ALTER COLUMN institution DROP NOT NULL;
+
+    CREATE TABLE IF NOT EXISTS events (
+      code TEXT PRIMARY KEY,
+      kind TEXT NOT NULL DEFAULT 'party',
+      title TEXT NOT NULL,
+      date_label TEXT NOT NULL,
+      time_label TEXT NOT NULL,
+      place TEXT NOT NULL,
+      description TEXT,
+      interests JSONB NOT NULL DEFAULT '{}'::jsonb,
+      registration_open BOOLEAN NOT NULL DEFAULT TRUE,
+      sort_order INTEGER NOT NULL DEFAULT 100,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
     CREATE TABLE IF NOT EXISTS games (
       id BIGSERIAL PRIMARY KEY,
       max_user_id TEXT NOT NULL REFERENCES users(max_user_id) ON DELETE CASCADE,
@@ -52,10 +75,26 @@ export async function initDb() {
     );
     CREATE INDEX IF NOT EXISTS games_user_status_idx ON games(max_user_id, status);
     CREATE INDEX IF NOT EXISTS games_score_idx ON games(score DESC) WHERE status='finished';
+    CREATE INDEX IF NOT EXISTS users_institution_key_idx ON users(institution_key);
   `);
 
-  // Older versions stored personal data only inside applications. Reuse the most
-  // recent application so existing participants are not forced to register again.
+  await pool.query(
+    `INSERT INTO events(code,kind,title,date_label,time_label,place,description,interests,registration_open,sort_order)
+     VALUES($1,'party',$2,$3,$4,$5,$6,$7::jsonb,TRUE,10)
+     ON CONFLICT(code) DO UPDATE SET
+       title=EXCLUDED.title,date_label=EXCLUDED.date_label,time_label=EXCLUDED.time_label,
+       place=EXCLUDED.place,description=EXCLUDED.description,interests=EXCLUDED.interests,updated_at=NOW()`,
+    [
+      'party-2026-09-18',
+      'Тусовка с играми и не только',
+      config.party.date,
+      config.party.time,
+      config.party.place,
+      'Настольные игры, НРИ, знакомства, проекты, стажировки и игровые активности.',
+      JSON.stringify(PARTY_INTERESTS),
+    ],
+  );
+
   await pool.query(`
     UPDATE users u SET
       full_name=COALESCE(NULLIF(BTRIM(u.full_name),''),a.full_name),
@@ -65,6 +104,7 @@ export async function initDb() {
     FROM (
       SELECT DISTINCT ON (max_user_id) max_user_id,full_name,phone,institution
       FROM applications
+      WHERE full_name IS NOT NULL OR phone IS NOT NULL OR institution IS NOT NULL
       ORDER BY max_user_id,updated_at DESC,created_at DESC,id DESC
     ) a
     WHERE u.max_user_id=a.max_user_id
@@ -74,6 +114,20 @@ export async function initDb() {
         NULLIF(BTRIM(u.institution),'') IS NULL
       )
   `);
+
+  const { rows: institutions } = await pool.query(
+    `SELECT max_user_id,institution FROM users
+     WHERE NULLIF(BTRIM(institution),'') IS NOT NULL
+       AND NULLIF(BTRIM(institution_key),'') IS NULL`,
+  );
+  for (const row of institutions) {
+    const normalized=normalizeInstitution(row.institution);
+    await pool.query(
+      'UPDATE users SET institution=$2,institution_key=$3 WHERE max_user_id=$1',
+      [row.max_user_id,normalized.display,normalized.key],
+    );
+  }
+
   await pool.query(`
     UPDATE users SET registered_at=COALESCE(registered_at,NOW())
     WHERE NULLIF(BTRIM(full_name),'') IS NOT NULL
@@ -107,19 +161,23 @@ export function isProfileComplete(profile) {
 
 export async function getUserProfile(userId) {
   const { rows } = await pool.query(
-    `SELECT max_user_id,first_name,username,full_name,phone,institution,registered_at
+    `SELECT max_user_id,first_name,username,full_name,phone,institution,institution_key,registered_at
      FROM users WHERE max_user_id=$1`,
     [String(userId)],
   );
   return rows[0] || null;
 }
 
-export async function saveUserProfile({userId,fullName,phone,institution}) {
+export async function saveUserProfile({userId,fullName,phone,institution,institutionKey=null}) {
+  const normalized=institutionKey
+    ? {key:String(institutionKey),display:String(institution).trim()}
+    : normalizeInstitution(institution);
   const { rows } = await pool.query(
-    `UPDATE users SET full_name=$2,phone=$3,institution=$4,registered_at=COALESCE(registered_at,NOW()),updated_at=NOW()
+    `UPDATE users SET full_name=$2,phone=$3,institution=$4,institution_key=$5,
+       registered_at=COALESCE(registered_at,NOW()),updated_at=NOW()
      WHERE max_user_id=$1
-     RETURNING max_user_id,first_name,username,full_name,phone,institution,registered_at`,
-    [String(userId),String(fullName).trim(),String(phone).trim(),String(institution).trim()],
+     RETURNING max_user_id,first_name,username,full_name,phone,institution,institution_key,registered_at`,
+    [String(userId),String(fullName).trim(),String(phone).trim(),normalized.display,normalized.key],
   );
   if (!rows[0]) throw new Error('User profile does not exist');
   return rows[0];
@@ -142,16 +200,33 @@ export async function clearFlow(userId) {
   await pool.query('DELETE FROM flows WHERE max_user_id=$1', [String(userId)]);
 }
 
+export async function getOpenEvents() {
+  const { rows } = await pool.query(
+    `SELECT code,kind,title,date_label,time_label,place,description,interests
+     FROM events WHERE registration_open=TRUE ORDER BY sort_order,code`,
+  );
+  return rows;
+}
+
+export async function getEvent(code) {
+  const { rows } = await pool.query(
+    `SELECT code,kind,title,date_label,time_label,place,description,interests,registration_open
+     FROM events WHERE code=$1`,
+    [String(code)],
+  );
+  return rows[0] || null;
+}
+
 export async function saveApplication({userId,kind,interests=[],eventCode=null}) {
   const profile=await getUserProfile(userId);
   if (!isProfileComplete(profile)) throw new Error('Participant profile is incomplete');
   const key = `${userId}:${kind}:${eventCode || 'general'}`;
   await pool.query(
-    `INSERT INTO applications(submission_key,max_user_id,kind,full_name,phone,institution,interests,event_code)
-     VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8)
+    `INSERT INTO applications(submission_key,max_user_id,kind,interests,event_code)
+     VALUES($1,$2,$3,$4::jsonb,$5)
      ON CONFLICT(submission_key) DO UPDATE SET
-       full_name=$4,phone=$5,institution=$6,interests=$7::jsonb,updated_at=NOW()`,
-    [key,String(userId),kind,profile.full_name,profile.phone,profile.institution,JSON.stringify(interests),eventCode],
+       interests=$4::jsonb,event_code=$5,updated_at=NOW()`,
+    [key,String(userId),kind,JSON.stringify(interests),eventCode],
   );
 }
 
@@ -205,11 +280,18 @@ export async function getRank(userId) {
 
 export async function getInstitutionLeaderboard(limit=10) {
   const { rows } = await pool.query(
-    `WITH best AS (SELECT max_user_id,MAX(score)::int score FROM games WHERE status='finished' GROUP BY max_user_id)
-     SELECT u.institution,ROUND(AVG(b.score))::int score,COUNT(*)::int players
-     FROM best b JOIN users u ON u.max_user_id=b.max_user_id
-     WHERE NULLIF(BTRIM(u.institution),'') IS NOT NULL GROUP BY u.institution
-     ORDER BY score DESC,players DESC LIMIT $1`,[limit]);
+    `WITH best AS (
+       SELECT max_user_id,MAX(score)::int score FROM games WHERE status='finished' GROUP BY max_user_id
+     ), grouped AS (
+       SELECT COALESCE(NULLIF(u.institution_key,''),LOWER(BTRIM(u.institution))) institution_key,
+              MAX(u.institution) institution,ROUND(AVG(b.score))::int score,COUNT(*)::int players
+       FROM best b JOIN users u ON u.max_user_id=b.max_user_id
+       WHERE NULLIF(BTRIM(u.institution),'') IS NOT NULL
+         AND COALESCE(u.institution_key,'') <> 'not_studying'
+       GROUP BY COALESCE(NULLIF(u.institution_key,''),LOWER(BTRIM(u.institution)))
+     )
+     SELECT institution,score,players FROM grouped
+     ORDER BY score DESC,players DESC,institution LIMIT $1`,[limit]);
   return rows;
 }
 
