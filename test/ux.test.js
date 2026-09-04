@@ -4,6 +4,8 @@ import {
   applyChoice, currentEvent, formatCompactOutcome, formatDeltas, formatFinanceLog,
   newGameState,
 } from '../src/game/engine.js';
+import { decorateChoiceCosts, hydrateEventReasons } from '../src/game/explanations.js';
+import { SCENARIO_BANK } from '../src/game/scenarioBank.js';
 import { normalizeInstitution } from '../src/institutions.js';
 
 test('rendered choices expose direct money cost and attach a reason for every direct effect',()=>{
@@ -14,6 +16,21 @@ test('rendered choices expose direct money cost and attach a reason for every di
     for (const [key,value] of Object.entries(choice.effects||{})) {
       if (!Number(value)) continue;
       assert.ok(choice.reasons?.[key],`${event.id}:${choice.text}:${key} must have a reason`);
+    }
+  }
+});
+
+test('all generated scenarios become self-explaining and expose direct money before selection',()=>{
+  for (const raw of SCENARIO_BANK) {
+    const event=decorateChoiceCosts(hydrateEventReasons(raw));
+    for (const choice of event.choices) {
+      for (const [key,value] of Object.entries(choice.effects||{})) {
+        if (!Number(value)) continue;
+        assert.ok(choice.reasons?.[key],`${event.id}:${choice.text}:${key} must have a reason`);
+      }
+      if (Number(choice.effects?.money||0)!==0) {
+        assert.match(choice.text,/₽/,`${event.id}:${choice.text} must show direct money before choice`);
+      }
     }
   }
 });
